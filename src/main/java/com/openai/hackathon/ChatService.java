@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -19,12 +21,16 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 @Service
 public class ChatService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     private static final String SESSION_CONVERSATION_ID = "openai_conversation_id";
 
@@ -108,7 +114,127 @@ public class ChatService {
         }
     }
 
-    public void addFileToVectorStore(MultipartFile file) {
+    public String chatWithFile(String prompt, MultipartFile file) {
+        if (prompt == null || prompt.isBlank()) {
+            throw new IllegalArgumentException("prompt must not be blank");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("file must not be empty");
+        }
+
+        HttpSession session = currentSession(true);
+
+        // ensure conversation id exists (same approach as chat())
+        String conversationId = session == null ? null : (String) session.getAttribute("openai_conversation_id");
+        if (conversationId == null || conversationId.isBlank()) {
+            conversationId = createConversation();
+            if (session != null) session.setAttribute("openai_conversation_id", conversationId);
+        }
+
+        // 1) Upload file -> file_id
+        MultipartBodyBuilder mb = new MultipartBodyBuilder();
+        mb.part("purpose", "assistants");
+        Resource resource = file.getResource();
+        mb.part("file", resource)
+                .filename(file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload.bin");
+
+        MultiValueMap<String, HttpEntity<?>> multipartBody = mb.build();
+
+        final String uploadRaw;
+        try {
+            uploadRaw = webClient.post()
+                    .uri("/v1/files")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(BodyInserters.fromMultipartData(multipartBody))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            // This prints OpenAI's real error JSON + full stacktrace
+            log.error(
+                    "OpenAI /v1/files failed. status={} responseBody={}",
+                    e.getStatusCode().value(),
+                    safeBody(e),
+                    e
+            );
+            throw e;
+        }
+
+        if (uploadRaw == null || uploadRaw.isBlank()) {
+            throw new IllegalStateException("Empty response from OpenAI files upload");
+        }
+
+        final String fileId;
+        try {
+            fileId = om.readTree(uploadRaw).path("id").asText(null);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed parsing file upload JSON: " + e.getMessage(), e);
+        }
+        if (fileId == null || fileId.isBlank()) {
+            throw new IllegalStateException("OpenAI did not return a file id");
+        }
+
+        // 2) Call Responses API with input_file included in this turn
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("model", model);
+        payload.put("conversation", conversationId);
+        payload.put("input", List.of(
+                Map.of(
+                        "role", "user",
+                        "content", List.of(
+                                Map.of("type", "input_text", "text", prompt),
+                                Map.of("type", "input_file", "file_id", fileId)
+                        )
+                )
+        ));
+
+        final String raw;
+        try {
+            raw = webClient.post()
+                    .uri("/v1/responses")
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            log.error(
+                    "OpenAI /v1/responses failed. status={} responseBody={}. payload(model={}, conversationId={}, filename={}, size={})",
+                    e.getStatusCode().value(),
+                    safeBody(e),
+                    model,
+                    conversationId,
+                    file.getOriginalFilename(),
+                    file.getSize(),
+                    e
+            );
+            throw e;
+        }
+
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalStateException("Empty response from OpenAI");
+        }
+
+        try {
+            var root = om.readTree(raw);
+            String outputText = root.path("output_text").asText(null);
+            if (outputText != null && !outputText.isBlank()) return outputText;
+            return extractOutputText(root);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed parsing OpenAI response JSON: " + e.getMessage(), e);
+        }
+    }
+
+    private static String safeBody(WebClientResponseException e) {
+        try {
+            // Works even if response is not UTF-8; falls back nicely
+            return e.getResponseBodyAsString(StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return "<unavailable>";
+        }
+    }
+
+
+    public String addFileToVectorStore(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("file must not be empty");
         }
@@ -152,11 +278,11 @@ public class ChatService {
                 .retrieve()
                 .bodyToMono(String.class)
                 .block();
-
         if (attachRaw == null || attachRaw.isBlank()) {
             throw new IllegalStateException("Empty response from OpenAI vector store attach");
         }
-
+        System.out.println("Uploaded file ID: " + fileId);
+        return fileId;
     }
 
     private String createConversation() {

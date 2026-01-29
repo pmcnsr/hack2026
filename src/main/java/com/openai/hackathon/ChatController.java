@@ -23,10 +23,19 @@ public class ChatController {
         return new ChatResponse(chatService.chat(req.prompt()));
     }
 
+    @PostMapping(value = "/chatWithFile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ChatResponse> chatWithFile(
+            @RequestPart("prompt") String prompt,
+            @RequestPart("file") MultipartFile file
+    ) {
+        String answer = chatService.chatWithFile(prompt, file);
+        return ResponseEntity.ok(new ChatResponse(answer));
+    }
+
     @PostMapping(value = "/vector-store/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Void> addFileToVectorStore(@RequestPart("file") MultipartFile file) {
-        chatService.addFileToVectorStore(file);
-        return ResponseEntity.ok().build(); // 200, no ids returned
+    public ResponseEntity<String> addFileToVectorStore(@RequestPart("file") MultipartFile file) {
+        var id = chatService.addFileToVectorStore(file);
+        return ResponseEntity.ok().body("{\"fileId\":" + id);
     }
 
     public record ChatRequest(String prompt) {
