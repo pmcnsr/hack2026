@@ -35,10 +35,16 @@ public class ChatService {
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     public static final String SESSION_CONVERSATION_ID = "openai_conversation_id";
+    private static final String DEV_PROMPT = """
+            You are an assistant helping users analyze documents and answer questions.
+            Prefer information from uploaded documents and file search results over general knowledge.
+            Be concise and factual.
+            If the answer is not contained in the provided context, say so clearly.
+            If you give answers use HTML formatting and no emoticons.
+            """;
 
     private final WebClient webClient;
     private final ObjectMapper om = new ObjectMapper();
-
     private final String model;
     private final String vectorStoreId;
 
@@ -383,13 +389,31 @@ public class ChatService {
     }
 
     private String createConversation() {
-        // POST /v1/conversations -> returns { id: "conv_..." }
-        String raw = webClient.post()
-                .uri("/v1/conversations")
-                .bodyValue(Map.of()) // no items initially
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+        Map<String, Object> body = Map.of(
+                "items", List.of(
+                        Map.of(
+                                "role", "developer",
+                                "content", List.of(
+                                        Map.of("type", "input_text", "text", DEV_PROMPT)
+                                )
+                        )
+                )
+        );
+        final String raw;
+        try {
+            raw = webClient.post()
+                    .uri("/v1/conversations")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            log.error("OpenAI /v1/conversations failed. status={} responseBody={}",
+                    e.getStatusCode().value(),
+                    safeBody(e),
+                    e);
+            throw e;
+        }
 
         if (raw == null || raw.isBlank()) {
             throw new IllegalStateException("Empty response from OpenAI when creating conversation");
