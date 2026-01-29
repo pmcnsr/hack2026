@@ -2,6 +2,7 @@ package com.openai.hackathon;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openai.hackathon.ChatController.FileInfo;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -24,6 +25,7 @@ import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -125,10 +127,10 @@ public class ChatService {
         HttpSession session = currentSession(true);
 
         // ensure conversation id exists (same approach as chat())
-        String conversationId = session == null ? null : (String) session.getAttribute("openai_conversation_id");
+        String conversationId = session == null ? null : (String) session.getAttribute(SESSION_CONVERSATION_ID);
         if (conversationId == null || conversationId.isBlank()) {
             conversationId = createConversation();
-            if (session != null) session.setAttribute("openai_conversation_id", conversationId);
+            if (session != null) session.setAttribute(SESSION_CONVERSATION_ID, conversationId);
         }
 
         // 1) Upload file -> file_id
@@ -226,13 +228,101 @@ public class ChatService {
 
     private static String safeBody(WebClientResponseException e) {
         try {
-            // Works even if response is not UTF-8; falls back nicely
             return e.getResponseBodyAsString(StandardCharsets.UTF_8);
         } catch (Exception ignored) {
             return "<unavailable>";
         }
     }
 
+    public List<FileInfo> listVectorStoreFilesWithIds() {
+        if (vectorStoreId == null || vectorStoreId.isBlank()) {
+            throw new IllegalStateException("openai.vector-store-id is not configured");
+        }
+
+        final String listRaw;
+        try {
+            listRaw = webClient.get()
+                    .uri("/v1/vector_stores/{id}/files", vectorStoreId)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            log.error("OpenAI list vector store files failed. status={} body={}",
+                    e.getStatusCode().value(), safeBody(e), e);
+            throw e;
+        }
+
+        if (listRaw == null || listRaw.isBlank()) {
+            return List.of();
+        }
+
+        List<FileInfo> result = new ArrayList<>();
+
+        try {
+            var root = om.readTree(listRaw);
+            var data = root.path("data");
+            if (!data.isArray()) {
+                return List.of();
+            }
+
+            for (var item : data) {
+                String fileId = item.path("id").asText(null);
+                if (fileId == null || fileId.isBlank()) continue;
+
+                try {
+                    String fileRaw = webClient.get()
+                            .uri("/v1/files/{id}", fileId)
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block();
+
+                    if (fileRaw == null || fileRaw.isBlank()) continue;
+
+                    var fileJson = om.readTree(fileRaw);
+                    String filename = fileJson.path("filename").asText(null);
+
+                    if (filename != null && !filename.isBlank()) {
+                        result.add(new FileInfo(fileId, filename));
+                    }
+                } catch (WebClientResponseException e) {
+                    // hackathon mode: skip broken entries, continue
+                    log.warn("Failed fetching file {} details. status={} body={}",
+                            fileId, e.getStatusCode().value(), safeBody(e));
+                }
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed parsing OpenAI vector store files response", e);
+        }
+
+        return result;
+    }
+
+    public void removeFileFromVectorStore(String fileId) {
+        if (fileId == null || fileId.isBlank()) {
+            throw new IllegalArgumentException("fileId must not be blank");
+        }
+        if (vectorStoreId == null || vectorStoreId.isBlank()) {
+            throw new IllegalStateException("openai.vector-store-id is not configured");
+        }
+
+        try {
+            webClient.delete()
+                    .uri("/v1/vector_stores/{vsId}/files/{fileId}", vectorStoreId, fileId)
+                    .retrieve()
+                    .bodyToMono(Void.class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            log.error(
+                    "OpenAI delete vector store file failed. vectorStoreId={}, fileId={}, status={}, body={}",
+                    vectorStoreId,
+                    fileId,
+                    e.getStatusCode().value(),
+                    safeBody(e),
+                    e
+            );
+            throw e;
+        }
+    }
 
     public String addFileToVectorStore(MultipartFile file) {
         if (file == null || file.isEmpty()) {
