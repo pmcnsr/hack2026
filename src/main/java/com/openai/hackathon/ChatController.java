@@ -25,23 +25,23 @@ public class ChatController {
         this.chatService = chatService;
     }
 
-    @PostMapping(value = "/chat", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/chat", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_HTML_VALUE)
     @Tag(name = "Chat")
-    public ChatResponse chat(@RequestBody ChatRequest req) {
+    public String chat(@RequestBody ChatRequest req) {
         if (req == null || req.prompt() == null || req.prompt().isBlank()) {
             throw new IllegalArgumentException("prompt must not be blank");
         }
-        return new ChatResponse(chatService.chat(req.prompt()));
+        return chatService.chat(req.prompt());
     }
 
-    @PostMapping(value = "/chat/context", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/chat/context", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_HTML_VALUE)
     @Tag(name = "Chat")
-    public ResponseEntity<ChatResponse> chatWithFile(
+    public ResponseEntity<String> chatWithFile(
             @RequestPart("prompt") String prompt,
             @RequestPart("file") MultipartFile file
     ) {
         String answer = chatService.chatWithFile(prompt, file);
-        return ResponseEntity.ok(new ChatResponse(answer));
+        return ResponseEntity.ok(answer);
     }
 
     @PostMapping("/chat/reset")
@@ -90,10 +90,6 @@ public class ChatController {
     }
 
     public record ChatRequest(String prompt) {
-
-    }
-
-    public record ChatResponse(String answer) {
 
     }
 }
