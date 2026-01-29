@@ -1,6 +1,11 @@
 package com.openai.hackathon;
 
+import static com.openai.hackathon.ChatService.SESSION_CONVERSATION_ID;
+import static com.openai.hackathon.ChatService.currentSession;
+
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -8,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpSession;
 
 @RestController
 @RequestMapping("/api")
@@ -28,7 +34,7 @@ public class ChatController {
         return new ChatResponse(chatService.chat(req.prompt()));
     }
 
-    @PostMapping(value = "/chat-with-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/chat/context", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Tag(name = "Chat")
     public ResponseEntity<ChatResponse> chatWithFile(
             @RequestPart("prompt") String prompt,
@@ -36,6 +42,27 @@ public class ChatController {
     ) {
         String answer = chatService.chatWithFile(prompt, file);
         return ResponseEntity.ok(new ChatResponse(answer));
+    }
+
+    @PostMapping("/chat/reset")
+    @Tag(name = "Chat Control")
+    public ResponseEntity<Void> resetConversation() {
+        chatService.resetChat();
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/chat/status")
+    @Tag(name = "Chat Control")
+    public Map<String, Object> getConversationInfo() {
+        HttpSession session = currentSession(false);
+
+        Map<String, Object> result = new HashMap<>();
+        Object conversationId = session == null ? null : session.getAttribute(SESSION_CONVERSATION_ID);
+
+        result.put("conversationId", conversationId);
+        result.put("active", conversationId != null);
+
+        return result;
     }
 
     @GetMapping(value = "/vector-store/files", produces = MediaType.APPLICATION_JSON_VALUE)
