@@ -13,8 +13,7 @@ public class OpenAIConfig {
     @Bean
     WebClient openAiWebClient(OpenAIProps props) {
 
-        System.out.println("props.model()");
-        System.out.println(props.model());
+        System.out.println("OpenAIProps - model: " + props.model());
 
         return WebClient.builder()
                 .baseUrl(props.baseUrl())
