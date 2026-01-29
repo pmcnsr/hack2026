@@ -2,14 +2,23 @@ package com.openai.hackathon;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.reactive.function.client.WebClient;
+
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpEntity;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.http.client.MultipartBodyBuilder;
 
 import java.util.List;
 import java.util.Map;
@@ -23,7 +32,7 @@ public class ChatService {
     private final ObjectMapper om = new ObjectMapper();
 
     private final String model;
-    private final String vectorStoreId; // can be blank/null
+    private final String vectorStoreId;
 
     public ChatService(OpenAIProps props) {
         if (props == null || props.apiKey() == null || props.apiKey().isBlank()) {
@@ -50,7 +59,6 @@ public class ChatService {
     public String chat(String prompt) {
         HttpSession session = currentSession(true);
 
-        // 1) Ensure we have a durable conversation id
         String conversationId = session == null ? null : (String) session.getAttribute(SESSION_CONVERSATION_ID);
         if (conversationId == null || conversationId.isBlank()) {
             conversationId = createConversation();
@@ -59,7 +67,6 @@ public class ChatService {
             }
         }
 
-        // 2) Build /v1/responses payload (using conversation + file_search)
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("model", model);
         payload.put("conversation", conversationId);
@@ -70,7 +77,6 @@ public class ChatService {
                 )
         ));
 
-        // Make the conversation aware of your uploaded files via vector store
         if (!vectorStoreId.isBlank()) {
             payload.put("tools", List.of(
                     Map.of(
@@ -92,7 +98,6 @@ public class ChatService {
         try {
             JsonNode root = om.readTree(raw);
 
-            // Fast path: output_text is usually present
             String outputText = root.path("output_text").asText(null);
             if (outputText != null && !outputText.isBlank()) return outputText;
 
@@ -101,6 +106,57 @@ public class ChatService {
         } catch (Exception e) {
             throw new IllegalStateException("Failed parsing OpenAI response JSON: " + e.getMessage(), e);
         }
+    }
+
+    public void addFileToVectorStore(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("file must not be empty");
+        }
+        if (vectorStoreId == null || vectorStoreId.isBlank()) {
+            throw new IllegalStateException("openai.vector-store-id is missing");
+        }
+
+        MultipartBodyBuilder mb = new MultipartBodyBuilder();
+        mb.part("purpose", "assistants"); // for file_search / vector stores
+        Resource resource = file.getResource();
+        mb.part("file", resource)
+                .filename(file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload.bin");
+
+        MultiValueMap<String, HttpEntity<?>> multipartBody = mb.build();
+
+        String uploadRaw = webClient.post()
+                .uri("/v1/files")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(multipartBody))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        if (uploadRaw == null || uploadRaw.isBlank()) {
+            throw new IllegalStateException("Empty response from OpenAI files upload");
+        }
+
+        final String fileId;
+        try {
+            fileId = om.readTree(uploadRaw).path("id").asText(null);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed parsing file upload JSON: " + e.getMessage(), e);
+        }
+        if (fileId == null || fileId.isBlank()) {
+            throw new IllegalStateException("OpenAI did not return a file id");
+        }
+
+        String attachRaw = webClient.post()
+                .uri("/v1/vector_stores/{vectorStoreId}/files", vectorStoreId)
+                .bodyValue(Map.of("file_id", fileId))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        if (attachRaw == null || attachRaw.isBlank()) {
+            throw new IllegalStateException("Empty response from OpenAI vector store attach");
+        }
+
     }
 
     private String createConversation() {
