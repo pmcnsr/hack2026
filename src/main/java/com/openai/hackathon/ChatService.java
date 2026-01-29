@@ -34,7 +34,7 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
-    private static final String SESSION_CONVERSATION_ID = "openai_conversation_id";
+    public static final String SESSION_CONVERSATION_ID = "openai_conversation_id";
 
     private final WebClient webClient;
     private final ObjectMapper om = new ObjectMapper();
@@ -226,6 +226,13 @@ public class ChatService {
         }
     }
 
+    public void resetChat() {
+        HttpSession session = currentSession(false);
+        if (session != null) {
+            session.removeAttribute("openai_conversation_id");
+        }
+    }
+
     private static String safeBody(WebClientResponseException e) {
         try {
             return e.getResponseBodyAsString(StandardCharsets.UTF_8);
@@ -400,7 +407,7 @@ public class ChatService {
         }
     }
 
-    private static HttpSession currentSession(boolean create) {
+    public static HttpSession currentSession(boolean create) {
         var attrs = RequestContextHolder.getRequestAttributes();
         if (!(attrs instanceof ServletRequestAttributes sra)) return null;
         HttpServletRequest request = sra.getRequest();
