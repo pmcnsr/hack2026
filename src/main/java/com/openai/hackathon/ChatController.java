@@ -2,6 +2,8 @@ package com.openai.hackathon;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api")
@@ -21,6 +23,17 @@ public class ChatController {
         return new ChatResponse(chatService.chat(req.prompt()));
     }
 
-    public record ChatRequest(String prompt) {}
-    public record ChatResponse(String answer) {}
+    @PostMapping(value = "/vector-store/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Void> addFileToVectorStore(@RequestPart("file") MultipartFile file) {
+        chatService.addFileToVectorStore(file);
+        return ResponseEntity.ok().build(); // 200, no ids returned
+    }
+
+    public record ChatRequest(String prompt) {
+
+    }
+
+    public record ChatResponse(String answer) {
+
+    }
 }
