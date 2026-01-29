@@ -17,11 +17,13 @@ import java.util.Map;
 @Service
 public class ChatService {
 
-    private static final String SESSION_PREV_RESPONSE_ID = "prev_response_id";
+    private static final String SESSION_CONVERSATION_ID = "openai_conversation_id";
 
     private final WebClient webClient;
     private final ObjectMapper om = new ObjectMapper();
+
     private final String model;
+    private final String vectorStoreId; // can be blank/null
 
     public ChatService(OpenAIProps props) {
         if (props == null || props.apiKey() == null || props.apiKey().isBlank()) {
@@ -36,6 +38,8 @@ public class ChatService {
                 ? "gpt-4.1-mini"
                 : props.model().trim();
 
+        this.vectorStoreId = props.vectorStoreId() == null ? "" : props.vectorStoreId().trim();
+
         this.webClient = WebClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + props.apiKey().trim())
@@ -45,20 +49,35 @@ public class ChatService {
 
     public String chat(String prompt) {
         HttpSession session = currentSession(true);
-        String prev = session == null ? null : (String) session.getAttribute(SESSION_PREV_RESPONSE_ID);
 
+        // 1) Ensure we have a durable conversation id
+        String conversationId = session == null ? null : (String) session.getAttribute(SESSION_CONVERSATION_ID);
+        if (conversationId == null || conversationId.isBlank()) {
+            conversationId = createConversation();
+            if (session != null) {
+                session.setAttribute(SESSION_CONVERSATION_ID, conversationId);
+            }
+        }
+
+        // 2) Build /v1/responses payload (using conversation + file_search)
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("model", model);
+        payload.put("conversation", conversationId);
         payload.put("input", List.of(
                 Map.of(
                         "role", "user",
-                        "content", List.of(
-                                Map.of("type", "input_text", "text", prompt)
-                        )
+                        "content", List.of(Map.of("type", "input_text", "text", prompt))
                 )
         ));
-        if (prev != null && !prev.isBlank()) {
-            payload.put("previous_response_id", prev);
+
+        // Make the conversation aware of your uploaded files via vector store
+        if (!vectorStoreId.isBlank()) {
+            payload.put("tools", List.of(
+                    Map.of(
+                            "type", "file_search",
+                            "vector_store_ids", List.of(vectorStoreId)
+                    )
+            ));
         }
 
         String raw = webClient.post()
@@ -73,11 +92,7 @@ public class ChatService {
         try {
             JsonNode root = om.readTree(raw);
 
-            String responseId = root.path("id").asText(null);
-            if (session != null && responseId != null && !responseId.isBlank()) {
-                session.setAttribute(SESSION_PREV_RESPONSE_ID, responseId);
-            }
-
+            // Fast path: output_text is usually present
             String outputText = root.path("output_text").asText(null);
             if (outputText != null && !outputText.isBlank()) return outputText;
 
@@ -85,6 +100,31 @@ public class ChatService {
 
         } catch (Exception e) {
             throw new IllegalStateException("Failed parsing OpenAI response JSON: " + e.getMessage(), e);
+        }
+    }
+
+    private String createConversation() {
+        // POST /v1/conversations -> returns { id: "conv_..." }
+        String raw = webClient.post()
+                .uri("/v1/conversations")
+                .bodyValue(Map.of()) // no items initially
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalStateException("Empty response from OpenAI when creating conversation");
+        }
+
+        try {
+            JsonNode root = om.readTree(raw);
+            String id = root.path("id").asText(null);
+            if (id == null || id.isBlank()) {
+                throw new IllegalStateException("No conversation id returned by OpenAI");
+            }
+            return id;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed parsing conversation create JSON: " + e.getMessage(), e);
         }
     }
 
