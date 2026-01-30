@@ -43,6 +43,8 @@ public class ChatService {
             If you give answers use HTML formatting and no emoticons.
             """;
 
+    private String conversationId;
+
     private final WebClient webClient;
     private final ObjectMapper om = new ObjectMapper();
     private final String model;
@@ -73,7 +75,6 @@ public class ChatService {
     public String chat(String prompt) {
         HttpSession session = currentSession(true);
 
-        String conversationId = session == null ? null : (String) session.getAttribute(SESSION_CONVERSATION_ID);
         if (conversationId == null || conversationId.isBlank()) {
             conversationId = createConversation();
             if (session != null) {
@@ -133,7 +134,6 @@ public class ChatService {
         HttpSession session = currentSession(true);
 
         // ensure conversation id exists (same approach as chat())
-        String conversationId = session == null ? null : (String) session.getAttribute(SESSION_CONVERSATION_ID);
         if (conversationId == null || conversationId.isBlank()) {
             conversationId = createConversation();
             if (session != null) session.setAttribute(SESSION_CONVERSATION_ID, conversationId);
