@@ -7,7 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
-@EnableConfigurationProperties(OpenAIProps.class)
+@EnableConfigurationProperties({OpenAIProps.class, LocalAIProps.class})
 public class OpenAIConfig {
 
     @Bean

@@ -27,9 +27,11 @@ import jakarta.servlet.http.HttpSession;
 public class ChatController {
 
     private final ChatService chatService;
+    private final LocalLlamaService localLlamaService;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, LocalLlamaService localLlamaService) {
         this.chatService = chatService;
+        this.localLlamaService = localLlamaService;
     }
 
     @PostMapping(value = "/chat", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_HTML_VALUE)
@@ -70,6 +72,19 @@ public class ChatController {
         result.put("active", conversationId != null);
 
         return result;
+    }
+
+    @PostMapping(
+            value = "/chat/local",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_HTML_VALUE
+    )
+    @Tag(name = "Chat local")
+    public String chatLocal(@RequestBody ChatRequest req) {
+        if (req == null || req.prompt() == null || req.prompt().isBlank()) {
+            throw new IllegalArgumentException("prompt must not be blank");
+        }
+        return localLlamaService.chat(req.prompt());
     }
 
     @GetMapping(value = "/vector-store/files", produces = MediaType.APPLICATION_JSON_VALUE)
