@@ -184,6 +184,14 @@ public class ChatService {
 
         // 2) Call Responses API with input_file included in this turn
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        if (!vectorStoreId.isBlank()) {
+            payload.put("tools", List.of(
+                    Map.of(
+                            "type", "file_search",
+                            "vector_store_ids", List.of(vectorStoreId)
+                    )
+            ));
+        }
         payload.put("model", model);
         payload.put("conversation", conversationId);
         payload.put("input", List.of(
