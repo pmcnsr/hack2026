@@ -8,7 +8,7 @@ public class Constants {
             Be concise and factual.
             If the answer is not contained in the provided context, say so clearly.
             If you give answers use HTML formatting and no emoticons.
-                        
+            
             Hier ein wenig Fachwissen zu den Dateien und den hauptsächlichen Anwendungsfall:
                         
             Geschäftsvorfälle stellen ein zentrales Konzept von Consor Universal dar.
