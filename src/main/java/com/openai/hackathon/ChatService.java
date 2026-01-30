@@ -1,5 +1,28 @@
 package com.openai.hackathon;
 
+import static com.openai.hackathon.Constants.DEV_PROMPT;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.hackathon.ChatController.FileInfo;
@@ -7,41 +30,12 @@ import com.openai.hackathon.ChatController.FileInfo;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Service;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-import org.springframework.web.reactive.function.client.WebClient;
-
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpEntity;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.reactive.function.BodyInserters;
-import org.springframework.http.client.MultipartBodyBuilder;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 @Service
 public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     public static final String SESSION_CONVERSATION_ID = "openai_conversation_id";
-    private static final String DEV_PROMPT = """
-            You are an assistant helping users analyze documents and answer questions.
-            Prefer information from uploaded documents and file search results over general knowledge.
-            Be concise and factual.
-            If the answer is not contained in the provided context, say so clearly.
-            If you give answers use HTML formatting and no emoticons.
-            """;
 
     private String conversationId;
 
