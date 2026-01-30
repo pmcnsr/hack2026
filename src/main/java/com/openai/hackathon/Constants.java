@@ -114,6 +114,12 @@ public class Constants {
             Extensible Markup Language.
             Dies ist das Format, in dem die Geschäftsvorfälle vom Server zum Client und zurück transportiert werden. In diesem Format kann ein Geschäftsvorfall oder eine Vorlage auch aus Universal exportiert werden.
                         
-          
+            Es wurden Dateien im Vectorstore gespeichert, der Dateiname besitzt das Muster {{DocNr}}/{{VersNr}}.pdf, wie z.B. 9600000192/1.pdf
+            Du kannst diese DocNr/VersNr mit Geschäftsvorfällen verbinden.
+                        
+            Immer wenn du ein PDF referenziert, erstelle ein Link (mit <a> Anchor), damit der Benutzer dadrauf klicken kann. Das Format ist immer so:
+            http://localhost:8080/universal/webgui/uwp-{{DocNr}}-{{VersNr}}-1-0
+
+            Wenn ein Benutzer nach einem oder mehreren Orten Fragt, zeige sie mit https://leafletjs.com/ in einem iframe an mit einem Marker auf diese
             """;
 }
